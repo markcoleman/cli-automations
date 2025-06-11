@@ -1,0 +1,62 @@
+trigger:
+  branches:
+    include:
+      - main
+      - develop
+  paths:
+    include:
+      - azure-pipelines/databricks-ip-allowlist.yml
+      - azure-pipelines/templates/**
+
+# Pipeline variables - configure these in Azure DevOps
+variables:
+  # Test Environment Configuration
+  testDatabricksHost: 'https://test-workspace.cloud.databricks.com'
+  testCidrBlock: '10.0.0.0/24'  # Example CIDR block for test environment
+  
+  # Production Environment Configuration  
+  prodDatabricksHost: 'https://prod-workspace.cloud.databricks.com'
+  prodCidrBlock: '10.1.0.0/24'  # Example CIDR block for production environment
+
+# Secure variables that need to be configured in Azure DevOps Variable Groups:
+# - testDatabricksToken: Personal Access Token for test Databricks workspace
+# - prodDatabricksToken: Personal Access Token for production Databricks workspace
+
+name: 'Databricks-IP-Allowlist-$(Date:yyyyMMdd)-$(Rev:r)'
+
+stages:
+  # Test Environment Preview
+  - template: templates/preview-stage.yml
+    parameters:
+      environment: 'Test'
+      databricksHost: $(testDatabricksHost)
+      accessTokenVariable: 'testDatabricksToken'
+      cidrBlock: $(testCidrBlock)
+      dependsOn: []
+
+  # Test Environment Apply (with manual approval)
+  - template: templates/apply-stage.yml
+    parameters:
+      environment: 'Test'
+      databricksHost: $(testDatabricksHost)
+      accessTokenVariable: 'testDatabricksToken'
+      cidrBlock: $(testCidrBlock)
+      dependsOn: ['PreviewTestChange']
+
+  # Production Environment Preview
+  - template: templates/preview-stage.yml
+    parameters:
+      environment: 'Prod'
+      databricksHost: $(prodDatabricksHost)
+      accessTokenVariable: 'prodDatabricksToken'
+      cidrBlock: $(prodCidrBlock)
+      dependsOn: ['Test']
+
+  # Production Environment Apply (with manual approval)
+  - template: templates/apply-stage.yml
+    parameters:
+      environment: 'Production'
+      databricksHost: $(prodDatabricksHost)
+      accessTokenVariable: 'prodDatabricksToken'
+      cidrBlock: $(prodCidrBlock)
+      dependsOn: ['PreviewProdChange']

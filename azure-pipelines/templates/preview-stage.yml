@@ -1,0 +1,56 @@
+parameters:
+  - name: environment
+    type: string
+  - name: databricksHost
+    type: string
+  - name: accessTokenVariable
+    type: string
+  - name: cidrBlock
+    type: string
+  - name: dependsOn
+    type: object
+    default: []
+
+stages:
+  - stage: Preview${{ parameters.environment }}Change
+    displayName: 'Preview ${{ parameters.environment }} Changes'
+    dependsOn: ${{ parameters.dependsOn }}
+    pool:
+      vmImage: 'windows-latest'
+    
+    jobs:
+      - job: GeneratePreview
+        displayName: 'Generate Allowlist Preview'
+        steps:
+          - checkout: self
+          
+          - task: PowerShell@2
+            displayName: 'Install Databricks CLI'
+            inputs:
+              targetType: 'inline'
+              script: |
+                Write-Host "Installing Databricks CLI..."
+                pip install databricks-cli
+                databricks --version
+          
+          - task: PowerShell@2
+            displayName: 'Generate Allowlist Preview'
+            inputs:
+              targetType: 'filePath'
+              filePath: '$(System.DefaultWorkingDirectory)\azure-pipelines\templates\scripts\Generate-AllowlistPreview.ps1'
+              arguments: >
+                -DatabricksHost "${{ parameters.databricksHost }}"
+                -AccessToken "$(${{ parameters.accessTokenVariable }})"
+                -NewCidrBlock "${{ parameters.cidrBlock }}"
+                -Environment "${{ parameters.environment }}"
+                -OutputPath "$(Build.ArtifactStagingDirectory)\allowlist-preview-${{ parameters.environment }}.txt"
+            env:
+              DATABRICKS_HOST: ${{ parameters.databricksHost }}
+              DATABRICKS_TOKEN: $(${{ parameters.accessTokenVariable }})
+          
+          - task: PublishBuildArtifacts@1
+            displayName: 'Publish Preview Artifact'
+            inputs:
+              pathToPublish: '$(Build.ArtifactStagingDirectory)\allowlist-preview-${{ parameters.environment }}.txt'
+              artifactName: 'allowlist-preview-${{ parameters.environment }}'
+              publishLocation: 'Container'
