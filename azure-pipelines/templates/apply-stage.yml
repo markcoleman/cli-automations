@@ -1,0 +1,75 @@
+parameters:
+  - name: environment
+    type: string
+  - name: databricksHost
+    type: string
+  - name: accessTokenVariable
+    type: string
+  - name: cidrBlock
+    type: string
+  - name: dependsOn
+    type: object
+    default: []
+
+stages:
+  - stage: ${{ parameters.environment }}
+    displayName: 'Apply ${{ parameters.environment }} Changes'
+    dependsOn: ${{ parameters.dependsOn }}
+    pool:
+      vmImage: 'windows-latest'
+    
+    jobs:
+      - deployment: ApplyAllowlistChanges
+        displayName: 'Apply Allowlist Changes'
+        environment: ${{ parameters.environment }}
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                
+                - task: PowerShell@2
+                  displayName: 'Install Databricks CLI'
+                  inputs:
+                    targetType: 'inline'
+                    script: |
+                      Write-Host "Installing Databricks CLI..."
+                      pip install databricks-cli
+                      databricks --version
+                
+                - task: DownloadBuildArtifacts@1
+                  displayName: 'Download Preview Artifact'
+                  inputs:
+                    buildType: 'current'
+                    artifactName: 'allowlist-preview-${{ parameters.environment }}'
+                    downloadPath: '$(System.ArtifactsDirectory)'
+                
+                - task: PowerShell@2
+                  displayName: 'Display Preview for Reference'
+                  inputs:
+                    targetType: 'inline'
+                    script: |
+                      Write-Host "=================================================================================="
+                      Write-Host "REFERENCE: Approved Preview for ${{ parameters.environment }} Environment"
+                      Write-Host "=================================================================================="
+                      $previewFile = "$(System.ArtifactsDirectory)\allowlist-preview-${{ parameters.environment }}\allowlist-preview-${{ parameters.environment }}.txt"
+                      if (Test-Path $previewFile) {
+                        Get-Content $previewFile | Write-Host
+                      } else {
+                        Write-Host "Preview file not found at: $previewFile"
+                      }
+                      Write-Host "=================================================================================="
+                
+                - task: PowerShell@2
+                  displayName: 'Apply Databricks Allowlist Changes'
+                  inputs:
+                    targetType: 'filePath'
+                    filePath: '$(System.DefaultWorkingDirectory)\azure-pipelines\templates\scripts\Apply-DatabricksAllowlist.ps1'
+                    arguments: >
+                      -DatabricksHost "${{ parameters.databricksHost }}"
+                      -AccessToken "$(${{ parameters.accessTokenVariable }})"
+                      -NewCidrBlock "${{ parameters.cidrBlock }}"
+                      -Environment "${{ parameters.environment }}"
+                  env:
+                    DATABRICKS_HOST: ${{ parameters.databricksHost }}
+                    DATABRICKS_TOKEN: $(${{ parameters.accessTokenVariable }})
